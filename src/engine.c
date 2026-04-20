@@ -21,6 +21,20 @@ void *create_container(void *arg)
     return NULL;
 }
 
+static int generic_container_find(id_wireframe_t *id,
+                                  container_record_t **record)
+{
+    switch (id->id_t)
+    {
+        case UUID:
+            return find_container_by_id(id->data.id, record);
+        case TAG:
+            return find_container_by_tag(id->data.tag, record);
+        default:
+            return -1;
+    }
+}
+
 void *start_container(void *arg)
 {
     start_command_t *cmd = (start_command_t *) arg;
@@ -52,7 +66,7 @@ void *start_container(void *arg)
     memset(&record->container.process, 0, sizeof(process_t));
 
     // Update the container record with the command to be executed
-    record->container.process.command = strdup(cmd->command);
+    record->container.process.command = strdup(cmd->cmd);
 
     // Initialize the logger interface for the container
     log_interface_t child_interface;
@@ -62,7 +76,7 @@ void *start_container(void *arg)
     uuid_unparse(record->container.label.id, uuid_str);
 
     LOG(INFO, "Starting container %s (%s) with command: %s", uuid_str,
-        record->container.label.tag, cmd->command);
+        record->container.label.tag, cmd->cmd);
 
     record->container.status = CONTAINER_RUNNING;
     run_process(record, child_interface);

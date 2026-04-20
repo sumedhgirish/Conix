@@ -1,34 +1,128 @@
 #include "commands.h"
+#include "common.h"
 #include "engine.h"
+#include "utils.h"
+
+#include <pthread.h>
+#include <signal.h>
 #include <stdlib.h>
 
-int main(int argc, char *argv[])
+#define EXPECT_PAYLOAD(type, op_name)                                          \
+    do                                                                         \
+    {                                                                          \
+        if (payload == NULL || header.payload_size < sizeof(type))             \
+        {                                                                      \
+            LOG(ERROR, op_name ": payload too short (%zu bytes)",              \
+                header.payload_size);                                          \
+            command_reply_err(stream, "malformed " op_name " payload");        \
+            goto done;                                                         \
+        }                                                                      \
+    } while (0)
+
+#define DISPATCH(type, fn, op_name)                                            \
+    do                                                                         \
+    {                                                                          \
+        EXPECT_PAYLOAD(type, op_name);                                         \
+        fn((type *) payload);                                                  \
+        command_reply_ok(stream, NULL, 0);                                     \
+    } while (0)
+
+typedef struct
 {
-    create_command_t create_cmd = {
-        .image_path = "/home/crownedhog/Code/Conix/containers/alpine",
-        .tag_len = 4,
-        .tag = "test",
-    };
+    FILE *stream;
+} conn_args_t;
 
-    LOG(INFO, "Creating container with tag: %s and image path: %s",
-        create_cmd.tag, create_cmd.image_path);
+static void *handle_connection(void *arg)
+{
+    conn_args_t *conn = (conn_args_t *) arg;
+    FILE *stream = conn->stream;
+    free(conn);
 
-    create_container(&create_cmd);
+    ipc_header_t header;
+    void *payload = NULL;
 
-    const char *cmd = "ls -la && exit";
-    start_command_t *start_cmd =
-        malloc(sizeof(start_command_t) + strlen(cmd) + 1);
+    if (command_recv(&header, &payload, stream) < 0)
+        goto done;
 
-    start_cmd->id.id_t = TAG;
-    strncpy(start_cmd->id.data.tag, "test", TAG_MAX);
-    strncpy(start_cmd->command, cmd, strlen(cmd) + 1);
+    switch (header.opcode)
+    {
+        case OP_CREATE:
+            DISPATCH(create_command_t, create_container, "OP_CREATE");
+            break;
 
-    LOG(INFO, "Starting container with tag: %s and command: %s",
-        start_cmd->id.data.tag, start_cmd->command);
+        case OP_START:
+            DISPATCH(start_command_t, start_container, "OP_START");
+            break;
 
-    start_container(start_cmd);
+        default:
+            LOG(WARN, "Unknown opcode %d", header.opcode);
+            command_reply_err(stream, "unknown opcode");
+            break;
+    }
 
-    free(start_cmd);
+done:
+    free(payload);
+    fclose(stream);
+    return NULL;
+}
+
+static int g_server_fd = -1;
+
+static void on_signal(int sig)
+{
+    (void) sig;
+
+    LOG(INFO, "Shutting down conixd");
+
+    if (g_server_fd >= 0)
+        close(g_server_fd);
+
+    unlink(IPC_SOCKET_PATH);
+
+    _exit(0);
+}
+
+int main(void)
+{
+    signal(SIGTERM, on_signal);
+    signal(SIGINT, on_signal);
+    signal(SIGPIPE, SIG_IGN);
+
+    mkdir_p(CONIX_GLOBAL_PREFIX, 0755);
+
+    g_server_fd = ipc_listen();
+    if (g_server_fd < 0)
+        return 1;
+
+    LOG(INFO, "Conixd ready");
+
+    for (;;)
+    {
+        FILE *stream = NULL;
+        if (ipc_accept(g_server_fd, &stream) < 0)
+            continue;
+
+        conn_args_t *args = malloc(sizeof(conn_args_t));
+        if (args == NULL)
+        {
+            LOG(ERROR, "Out of memory allocating conn_args");
+            fclose(stream);
+            continue;
+        }
+
+        args->stream = stream;
+
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, handle_connection, args) < 0)
+        {
+            LOG(ERROR, "pthread_create failed");
+            free(args);
+            fclose(stream);
+            continue;
+        }
+
+        pthread_detach(tid);
+    }
 
     return 0;
 }

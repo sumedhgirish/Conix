@@ -133,6 +133,7 @@ int run_process(container_record_t *record, log_interface_t interface)
 
     int status;
     waitpid(record->container.process.pid, &status, 0);
+    record->container.process.time.end = time(NULL);
 
     pthread_join(log_thread, NULL);
 
@@ -147,6 +148,7 @@ int run_process(container_record_t *record, log_interface_t interface)
         record->container.process.exit_code = WTERMSIG(status);
     }
 
-    record->container.process.time.end = time(NULL);
+    record->container.status = CONTAINER_EXITED;
+
     return -1;
 }

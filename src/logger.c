@@ -73,11 +73,11 @@ static void *drain(void *args)
     {
         time_t now = time(NULL);
         struct tm *tm_info = localtime(&now);
-        strftime(ts, sizeof(ts), "%d/%m/%Y %H:%M:%SZ", tm_info);
+        strftime(ts, sizeof(ts), "%d/%m/%Y %H:%M:%S", tm_info);
 
         flockfile(drain->log_file);
 
-        fprintf(drain->log_file, "[%32s] %s", ts, buffer);
+        fprintf(drain->log_file, "[%16s] %s", ts, buffer);
         fflush(drain->log_file);
 
         funlockfile(drain->log_file);
