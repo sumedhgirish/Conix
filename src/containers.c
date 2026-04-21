@@ -31,7 +31,7 @@ int create_container_record(container_record_t **record, char *tag,
     uuid_unparse(new_record->container.label.id, uuid_buf);
 
     // Populate the tag
-    new_record->container.label.tag = strdup(tag);
+    strncpy(new_record->container.label.tag, tag, TAG_MAX);
 
     // Set the initial status of the container
     new_record->container.status = CONTAINER_CREATED;
@@ -41,11 +41,6 @@ int create_container_record(container_record_t **record, char *tag,
     CONTAINER_LOG_PATH(log_dir, uuid_buf, "");
     mkdir_p(log_dir, 0755);
     free(log_dir);
-
-    // Open log file
-    char *log_file;
-    CONTAINER_LOG_PATH(log_file, uuid_buf, "output.log");
-    new_record->container.logger.log_file = fopen(log_file, "w");
 
     // Init fs paths
     new_record->container.fs.image_path = strdup(image_path);
@@ -100,4 +95,25 @@ int find_container_by_tag(const char *tag, container_record_t **record)
     *record = NULL;
     read_unlock();
     return -1; // Container not found
+}
+
+int list_containers(void *null, void **payload, size_t *payload_len)
+{
+    read_lock();
+    container_entry_t *list =
+        malloc(sizeof(container_entry_t) * containers.num_containers);
+
+    container_record_t *curr = containers.head;
+    for (int i = 0; i < containers.num_containers; ++i)
+    {
+        list[i].status = curr->container.status;
+        list[i].label = curr->container.label;
+        curr = curr->next;
+    }
+    read_unlock();
+
+    *payload = list;
+    *payload_len = sizeof(container_entry_t) * containers.num_containers;
+
+    return 0;
 }

@@ -1,11 +1,9 @@
 #ifndef __CONTAINERS_H__
 #define __CONTAINERS_H__
 
-#include "common.h"
 #include "filesystem.h"
 #include "logger.h"
 #include "process.h"
-#include "utils.h"
 
 #include <pthread.h>
 #include <stdbool.h>
@@ -26,7 +24,7 @@ typedef enum
 typedef struct
 {
     uuid_t id;
-    char *tag;
+    char tag[TAG_MAX];
 } container_label_t;
 
 typedef struct
@@ -59,6 +57,12 @@ typedef struct
 } container_buffer_t;
 
 extern container_buffer_t containers;
+
+typedef struct
+{
+    container_status_t status;
+    container_label_t label;
+} container_entry_t;
 
 static inline void read_lock(void)
 {
@@ -94,6 +98,8 @@ int create_container_record(container_record_t **record, char *tag,
                             container_fs_path_t image_path);
 int find_container_by_id(const uuid_t id, container_record_t **record);
 int find_container_by_tag(const char *tag, container_record_t **record);
+
+int list_containers(void *null, void **payload, size_t *payload_len);
 
 int run_process(container_record_t *record, log_interface_t interface);
 

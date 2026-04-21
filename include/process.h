@@ -1,8 +1,6 @@
 #ifndef __PROCESS_H__
 #define __PROCESS_H__
 
-#include "common.h"
-
 #include <stdbool.h>
 #include <time.h>
 

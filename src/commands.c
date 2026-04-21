@@ -145,6 +145,22 @@ int command_send_start(FILE *server_file, start_command_t *cmd)
     return 0;
 }
 
+int command_send_stop(FILE *server_file, stop_command_t *cmd)
+{
+    ipc_header_t header = {.opcode = OP_STOP,
+                           .payload_size = sizeof(stop_command_t)};
+
+    if (fwrite(&header, sizeof(header), 1, server_file) != 1 ||
+        fwrite(cmd, sizeof(stop_command_t), 1, server_file) != 1)
+    {
+        LOG(ERROR, "Failed to send stop command: %s", strerror(errno));
+        return -1;
+    }
+
+    fflush(server_file);
+    return 0;
+}
+
 int command_recv_reply(ipc_header_t *header, void **payload, FILE *server_file)
 {
     if (fread(header, sizeof(ipc_header_t), 1, server_file) != 1)

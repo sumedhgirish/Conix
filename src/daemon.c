@@ -7,25 +7,24 @@
 #include <signal.h>
 #include <stdlib.h>
 
-#define EXPECT_PAYLOAD(type, op_name)                                          \
-    do                                                                         \
-    {                                                                          \
-        if (payload == NULL || header.payload_size < sizeof(type))             \
-        {                                                                      \
-            LOG(ERROR, op_name ": payload too short (%zu bytes)",              \
-                header.payload_size);                                          \
-            command_reply_err(stream, "malformed " op_name " payload");        \
-            goto done;                                                         \
-        }                                                                      \
-    } while (0)
+typedef struct
+{
+    ipc_opcode_t opcode;
+    handler_t handler;
+    size_t min_payload;
+} dispatch_entry_t;
 
-#define DISPATCH(type, fn, op_name)                                            \
-    do                                                                         \
-    {                                                                          \
-        EXPECT_PAYLOAD(type, op_name);                                         \
-        fn((type *) payload);                                                  \
-        command_reply_ok(stream, NULL, 0);                                     \
-    } while (0)
+static const dispatch_entry_t dispatch_table[] = {
+    // Operations
+    {OP_CREATE, create_container, sizeof(create_command_t)},
+    {OP_START, start_container, sizeof(start_command_t)},
+    {OP_STOP, stop_container, sizeof(stop_command_t)},
+
+    // Queries
+    {QRY_LIST, list_containers, 0},
+};
+
+#define DISPATCH_TABLE_LEN (sizeof(dispatch_table) / sizeof(dispatch_entry_t))
 
 typedef struct
 {
@@ -44,21 +43,39 @@ static void *handle_connection(void *arg)
     if (command_recv(&header, &payload, stream) < 0)
         goto done;
 
-    switch (header.opcode)
+    const dispatch_entry_t *entry = NULL;
+    for (size_t i = 0; i < DISPATCH_TABLE_LEN; i++)
     {
-        case OP_CREATE:
-            DISPATCH(create_command_t, create_container, "OP_CREATE");
+        if (dispatch_table[i].opcode == header.opcode)
+        {
+            entry = &dispatch_table[i];
             break;
-
-        case OP_START:
-            DISPATCH(start_command_t, start_container, "OP_START");
-            break;
-
-        default:
-            LOG(WARN, "Unknown opcode %d", header.opcode);
-            command_reply_err(stream, "unknown opcode");
-            break;
+        }
     }
+
+    if (entry == NULL)
+    {
+        LOG(WARN, "Unknown opcode %d", header.opcode);
+        command_reply_err(stream, "unknown opcode");
+        goto done;
+    }
+
+    if (header.payload_size < entry->min_payload)
+    {
+        LOG(ERROR, "opcode %d: payload too short (%zu < %zu)", header.opcode,
+            header.payload_size, entry->min_payload);
+        command_reply_err(stream, "malformed payload");
+        goto done;
+    }
+
+    void *reply = NULL;
+    size_t reply_len = 0;
+
+    (entry->handler(payload, &reply, &reply_len) == 0)
+        ? command_reply_ok(stream, reply, reply_len)
+        : command_reply_err(stream, "command failed");
+
+    free(reply);
 
 done:
     free(payload);

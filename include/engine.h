@@ -1,7 +1,12 @@
 #ifndef __ENGINE_H__
 #define __ENGINE_H__
 
-void *create_container(void *arg);
-void *start_container(void *arg);
+#include <stddef.h>
+
+typedef int (*handler_t)(void *input, void **payload, size_t *payload_len);
+
+int create_container(void *input, void **payload, size_t *payload_len);
+int start_container(void *input, void **payload, size_t *payload_len);
+int stop_container(void *input, void **payload, size_t *payload_len);
 
 #endif
